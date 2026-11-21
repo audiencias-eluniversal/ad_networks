@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import base64
+import json
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 from .comun import Fechas, env, guardar, http, log, pedir
 
@@ -190,6 +191,63 @@ def mgid(f: Fechas) -> None:
     guardar("MGID", "DataMgid.json", r.content)
 
 
+# --- Ruta 9: Meta (ingresos de monetización de una Página de Facebook, Graph API oficial) ----------
+META_API = "https://graph.facebook.com/v23.0"
+META_PAGINA_DEFECTO = "127926969701"
+
+
+def _meta_insights(s, pagina: str, token: str, f: Fechas, **extra) -> list:
+    # 'until' es exclusivo en la API: se suma un día para incluir el último (ayer).
+    hasta = (date.fromisoformat(f.ayer) + timedelta(days=1)).isoformat()
+    r = s.get(f"{META_API}/{pagina}/insights", timeout=60, params={
+        "metric": "monetization_approximate_earnings", "period": "day",
+        "since": f.inicio, "until": hasta, "access_token": token, **extra})
+    j = r.json()
+    if "error" in j:
+        raise RuntimeError(f"Meta insights {extra or 'total'}: {j['error'].get('message')} "
+                           f"(code {j['error'].get('code')})")
+    return j["data"]
+
+
+def _meta_diario(valores: list, clave: str | None = None) -> list:
+    salida = []
+    for v in valores:
+        # start_time (si viene) es el inicio del día; si no, end_time es el día siguiente.
+        if v.get("start_time"):
+            d = v["start_time"][:10]
+        else:
+            d = (date.fromisoformat(v["end_time"][:10]) - timedelta(days=1)).isoformat()
+        salida.append({"date": d, "value": v["value"], **({clave: v[clave]} if clave else {})})
+    return salida
+
+
+def meta(f: Fechas) -> None:
+    s = http()
+    pagina = env("META_PAGE_ID", META_PAGINA_DEFECTO)
+    token = env("META_PAGE_TOKEN")
+
+    total = _meta_diario(_meta_insights(s, pagina, token, f)[0]["values"])
+    por_herramienta: dict[str, list] = {}
+    datos = _meta_insights(s, pagina, token, f, breakdown="monetization_tool")
+    for p in _meta_diario(datos[0]["values"], "monetization_tool"):
+        por_herramienta.setdefault(p["monetization_tool"], []).append(
+            {"date": p["date"], "value": p["value"]})
+
+    # Si algo falló ya se lanzó el error arriba: no se escribe nada y el archivo anterior queda intacto.
+    resultado = {
+        "page_id": pagina, "start": f.inicio, "end": f.ayer, "currency": "USD",
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "metrics": {
+            "total_earnings": {"total": round(sum(p["value"] for p in total), 2), "daily": total},
+            "earnings_by_tool": {
+                t: {"total": round(sum(x["value"] for x in pts), 2), "daily": pts}
+                for t, pts in por_herramienta.items()},
+        },
+        "errors": {},
+    }
+    guardar("Meta", "DataMeta.json", json.dumps(resultado, ensure_ascii=False, indent=2))
+
+
 FUENTES = {
     "trm": trm,
     "seedtag": seedtag,
@@ -199,4 +257,5 @@ FUENTES = {
     "refinery89": refinery89,
     # "taboola": taboola,  # desactivada
     "mgid": mgid,
+    "meta": meta,
 }

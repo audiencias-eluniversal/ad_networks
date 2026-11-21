@@ -149,6 +149,58 @@ function fuenteMgid(f) {
   guardar('MGID', 'DataMgid.json', r.getContent());
 }
 
+// --- Meta: ingresos de monetización de una Página de Facebook (Graph API oficial) -----------------
+const META_API = 'https://graph.facebook.com/v23.0';
+
+function metaInsights_(pagina, token, f, extra) {
+  // 'until' es exclusivo en la API: se suma un día para incluir el último (ayer).
+  const hasta = Utilities.formatDate(new Date(new Date(f.ayer + 'T12:00:00Z').getTime() + 86400000), 'UTC', 'yyyy-MM-dd');
+  const pares = [['metric', 'monetization_approximate_earnings'], ['period', 'day'],
+    ['since', f.inicio], ['until', hasta], ['access_token', token]].concat(extra || []);
+  const r = UrlFetchApp.fetch(META_API + '/' + pagina + '/insights?' + qs(pares), { muteHttpExceptions: true });
+  const j = JSON.parse(r.getContentText());
+  if (j.error) {
+    throw new Error('Meta insights ' + (extra && extra.length ? extra.map((e) => e.join('=')).join(',') : 'total') +
+      ': ' + j.error.message + ' (code ' + j.error.code + ')');
+  }
+  return j.data;
+}
+
+function metaDiario_(valores, clave) {
+  return valores.map((v) => {
+    // start_time (si viene) es el inicio del día; si no, end_time es el día siguiente.
+    const d = v.start_time ? v.start_time.slice(0, 10)
+      : Utilities.formatDate(new Date(new Date(v.end_time.slice(0, 10) + 'T12:00:00Z').getTime() - 86400000), 'UTC', 'yyyy-MM-dd');
+    const o = { date: d, value: v.value };
+    if (clave) o[clave] = v[clave];
+    return o;
+  });
+}
+
+function fuenteMeta(f) {
+  const pagina = prop('META_PAGE_ID', '127926969701');
+  const token = prop('META_PAGE_TOKEN');
+  const suma = (pts) => Math.round(pts.reduce((a, p) => a + p.value, 0) * 100) / 100;
+
+  const total = metaDiario_(metaInsights_(pagina, token, f)[0].values);
+  const porHerramienta = {};
+  const datos = metaInsights_(pagina, token, f, [['breakdown', 'monetization_tool']]);
+  metaDiario_(datos[0].values, 'monetization_tool').forEach((p) => {
+    (porHerramienta[p.monetization_tool] = porHerramienta[p.monetization_tool] || []).push({ date: p.date, value: p.value });
+  });
+
+  // Si algo falló ya se lanzó el error arriba: no se escribe nada y el archivo anterior queda intacto.
+  const earningsByTool = {};
+  Object.keys(porHerramienta).forEach((t) => { earningsByTool[t] = { total: suma(porHerramienta[t]), daily: porHerramienta[t] }; });
+  const resultado = {
+    page_id: pagina, start: f.inicio, end: f.ayer, currency: 'USD',
+    fetched_at: new Date().toISOString(),
+    metrics: { total_earnings: { total: suma(total), daily: total }, earnings_by_tool: earningsByTool },
+    errors: {},
+  };
+  guardar('Meta', 'DataMeta.json', JSON.stringify(resultado, null, 2));
+}
+
 // --- Taboola (DESACTIVADA: ya no está con nosotros por ahora) -------------------------------------
 // No corre en ejecutarTodo(). Se conserva para probar_taboola() y para reactivarla: moverla de
 // FUENTES_INACTIVAS a FUENTES.
@@ -177,6 +229,7 @@ const FUENTES = {
   adx: fuenteAdx,
   refinery89: fuenteRefinery89,
   mgid: fuenteMgid,
+  meta: fuenteMeta,
   // taboola: fuenteTaboola,  // desactivada
   teads: fuenteTeads,
   membrana: fuenteMembrana,

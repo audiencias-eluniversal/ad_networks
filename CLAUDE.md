@@ -24,6 +24,7 @@ sincronizada de OneDrive, que consume Power BI. Ver `README.md` para uso.
 | refinery89 | `Refinery89\Refinery89_Data.csv` | |
 | taboola | `Taboola\DataTaboola.json` | **desactivada desde 2026-11-17** (Taboola ya no está con ellos): código y credenciales comentados en Python; en Apps Script está fuera de `FUENTES` (en `FUENTES_INACTIVAS`, solo corre con `probar_taboola`) |
 | mgid | `MGID\DataMgid.json` | agregada el 2026-11-17 en Python y Apps Script (`probar_mgid`; requiere propiedades MGID_CLIENT_ID y MGID_TOKEN). GET `/v2/pub/account/{MGID_CLIENT_ID}/website-custom-report` con Bearer `MGID_TOKEN`; dimensiones date,website; métricas pageViews,revenue; limit=100 |
+| meta | `Meta\DataMeta.json` | agregada el 2026-11-21 en Python y Apps Script (`probar_meta`; requiere propiedad META_PAGE_TOKEN, opcional META_PAGE_ID=127926969701). Graph API v23.0 `/{page}/insights`, métrica `monetization_approximate_earnings` (total y desglose `monetization_tool`), USD, 40 días. Si una consulta falla no se escribe nada (queda el archivo anterior). Basada en `E:\Carpetas\Descargas\mbs\video_earnings.py` |
 
 Los formatos replican exactamente los de Make (Power BI depende de ellos): no cambiarlos sin confirmar.
 
