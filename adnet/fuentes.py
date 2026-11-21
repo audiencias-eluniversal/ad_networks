@@ -248,6 +248,42 @@ def meta(f: Fechas) -> None:
     guardar("Meta", "DataMeta.json", json.dumps(resultado, ensure_ascii=False, indent=2))
 
 
+# --- Ruta 10: Momagic (dsp-ssps.momagic.com; login por formulario + cookie 'id') --------------------
+MOMAGIC_URL = "https://dsp-ssps.momagic.com"
+
+
+def momagic(f: Fechas) -> None:
+    s = http()
+    s.headers.update({
+        "accept": "application/json, text/plain, */*",
+        "origin": MOMAGIC_URL,
+        "referer": f"{MOMAGIC_URL}/login",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+    })
+    # 1. Login: responde 303 y deja la cookie 'id' en la sesión.
+    pedir(s, "POST", f"{MOMAGIC_URL}/authenticate/userpass",
+          data={"username": env("MOMAGIC_USER"), "password": env("MOMAGIC_PASS")})
+    if "id" not in s.cookies:
+        raise RuntimeError("Momagic: el login no devolvió la cookie 'id' (¿credenciales?)")
+
+    # 2. Estadísticas por día (date_as_dimension): 40 días = 40 filas; pagesize 100 deja margen.
+    r = pedir(s, "POST", f"{MOMAGIC_URL}/reporting/gamreportData/report/stats",
+              headers={"authorization": f"Basic {env('MOMAGIC_BASIC_AUTH')}",
+                       "referer": f"{MOMAGIC_URL}/"},
+              data={
+                  "pagesize": "100", "startindex": "1", "language": "0", "currency": "2",
+                  "sdate": f.inicio, "edate": f.ayer,
+                  "domain": '["all"]', "adunit": '["none"]',
+                  "impression": "true", "click": "true", "ctr": "true", "revenue": "true",
+                  "ecpm": "true", "date_as_dimension": "true", "roundoffmetric": "true",
+              })
+    filas = r.json().get("stats", {}).get("data", [])
+    if not filas:
+        raise RuntimeError(f"Momagic: la respuesta no trae filas en stats.data: {r.text[:300]}")
+    guardar("Momagic", "DataMomagic.json", json.dumps(filas, indent=2, ensure_ascii=False))
+
+
 FUENTES = {
     "trm": trm,
     "seedtag": seedtag,
@@ -258,4 +294,5 @@ FUENTES = {
     # "taboola": taboola,  # desactivada
     "mgid": mgid,
     "meta": meta,
+    "momagic": momagic,
 }

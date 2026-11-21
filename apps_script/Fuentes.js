@@ -201,6 +201,51 @@ function fuenteMeta(f) {
   guardar('Meta', 'DataMeta.json', JSON.stringify(resultado, null, 2));
 }
 
+// --- Momagic (dsp-ssps.momagic.com): login por formulario + cookie 'id' ----------------------------
+const MOMAGIC_URL = 'https://dsp-ssps.momagic.com';
+const MOMAGIC_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36';
+
+function fuenteMomagic(f) {
+  // 1. Login: responde 303 con la cookie 'id'. UrlFetchApp no tiene cookie jar: no se sigue la
+  //    redirección y se leen los Set-Cookie de la respuesta.
+  const login = UrlFetchApp.fetch(MOMAGIC_URL + '/authenticate/userpass', {
+    method: 'post',
+    payload: { username: prop('MOMAGIC_USER'), password: prop('MOMAGIC_PASS') },
+    followRedirects: false,
+    muteHttpExceptions: true,
+    headers: { origin: MOMAGIC_URL, referer: MOMAGIC_URL + '/login', 'user-agent': MOMAGIC_UA },
+  });
+  const code = login.getResponseCode();
+  if (code >= 400) throw new Error('Momagic login -> HTTP ' + code + ': ' + login.getContentText().slice(0, 300));
+  const sc = login.getAllHeaders()['Set-Cookie'];
+  const cookies = (Array.isArray(sc) ? sc : (sc ? [sc] : [])).map((c) => c.split(';')[0].trim());
+  if (!cookies.some((c) => c.indexOf('id=') === 0)) {
+    throw new Error("Momagic: el login (HTTP " + code + ") no devolvió la cookie 'id' (¿credenciales?)");
+  }
+
+  // 2. Estadísticas por día (date_as_dimension): 40 días = 40 filas; pagesize 100 deja margen.
+  const r = pedir(MOMAGIC_URL + '/reporting/gamreportData/report/stats', {
+    method: 'post',
+    headers: {
+      authorization: 'Basic ' + prop('MOMAGIC_BASIC_AUTH'),
+      cookie: cookies.join('; '),
+      origin: MOMAGIC_URL, referer: MOMAGIC_URL + '/', 'user-agent': MOMAGIC_UA,
+      accept: 'application/json, text/plain, */*',
+    },
+    payload: {
+      pagesize: '100', startindex: '1', language: '0', currency: '2',
+      sdate: f.inicio, edate: f.ayer,
+      domain: '["all"]', adunit: '["none"]',
+      impression: 'true', click: 'true', ctr: 'true', revenue: 'true',
+      ecpm: 'true', date_as_dimension: 'true', roundoffmetric: 'true',
+    },
+  });
+  const j = JSON.parse(r.getContentText());
+  const filas = (j.stats && j.stats.data) || [];
+  if (!filas.length) throw new Error('Momagic: la respuesta no trae filas en stats.data: ' + r.getContentText().slice(0, 300));
+  guardar('Momagic', 'DataMomagic.json', JSON.stringify(filas, null, 2));
+}
+
 // --- Taboola (DESACTIVADA: ya no está con nosotros por ahora) -------------------------------------
 // No corre en ejecutarTodo(). Se conserva para probar_taboola() y para reactivarla: moverla de
 // FUENTES_INACTIVAS a FUENTES.
@@ -230,6 +275,7 @@ const FUENTES = {
   refinery89: fuenteRefinery89,
   mgid: fuenteMgid,
   meta: fuenteMeta,
+  momagic: fuenteMomagic,
   // taboola: fuenteTaboola,  // desactivada
   teads: fuenteTeads,
   membrana: fuenteMembrana,

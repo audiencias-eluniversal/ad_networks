@@ -26,6 +26,8 @@ sincronizada de OneDrive, que consume Power BI. Ver `README.md` para uso.
 | mgid | `MGID\DataMgid.json` | agregada el 2026-11-17 en Python y Apps Script (`probar_mgid`; requiere propiedades MGID_CLIENT_ID y MGID_TOKEN). GET `/v2/pub/account/{MGID_CLIENT_ID}/website-custom-report` con Bearer `MGID_TOKEN`; dimensiones date,website; métricas pageViews,revenue; limit=100 |
 | meta | `Meta\DataMeta.json` | agregada el 2026-11-21 en Python y Apps Script (`probar_meta`; requiere propiedad META_PAGE_TOKEN, opcional META_PAGE_ID=127926969701). Graph API v23.0 `/{page}/insights`, métrica `monetization_approximate_earnings` (total y desglose `monetization_tool`), USD, 40 días. Si una consulta falla no se escribe nada (queda el archivo anterior). Basada en `E:\Carpetas\Descargas\mbs\video_earnings.py` |
 
+| momagic | `Momagic\DataMomagic.json` | agregada el 2026-11-21 en Python y Apps Script (`probar_momagic`; requiere propiedades MOMAGIC_USER, MOMAGIC_PASS, MOMAGIC_BASIC_AUTH). Login POST `dsp-ssps.momagic.com/authenticate/userpass` (303 + cookie `id`), luego POST `/reporting/gamreportData/report/stats` con `Authorization: Basic` fija; 40 días, una fila por día (lista JSON = `stats.data`). Sin filas → error y no escribe. Basada en `E:\Carpetas\Descargas\momagic-request\request.py` (allí el rango era inicio de mes → ayer) |
+
 Los formatos replican exactamente los de Make (Power BI depende de ellos): no cambiarlos sin confirmar.
 
 ## Forma de trabajo con el usuario

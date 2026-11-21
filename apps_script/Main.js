@@ -60,4 +60,5 @@ function probar_adx() { ejecutar_(['adx']); }
 function probar_refinery89() { ejecutar_(['refinery89']); }
 function probar_mgid() { ejecutar_(['mgid']); }
 function probar_meta() { ejecutar_(['meta']); }
+function probar_momagic() { ejecutar_(['momagic']); }
 function probar_taboola() { ejecutar_(['taboola']); } // Taboola desactivada: solo prueba manual
