@@ -21,6 +21,7 @@ sincronizada de OneDrive, que consume Power BI. Ver `README.md` para uso.
 | membrana | `Membrana\DataMembrana.json` | código listo; en nov-2026 la API no respondía por una falla temporal del proveedor (no requiere cambios) |
 | teads | `Teads\DataTeads.json`, `Teads\QueryTeads.json` | dos tokens: uno para crear el reporte, otro para consultarlo |
 | adx | `AdX_OpenBidding\AdX_OpenBidding.csv` | nombre fijo (se reemplaza a diario). Correo de admanager-noreply@google.com en Outlook.com personal; `GRAPH_TENANT=consumers`; sesión en `.graph_token_cache.json`. El reporte de GAM cubre 30 días y llega ~7:00 |
+| adkaora | `AdKaora\<nombre del adjunto>` | agregada el 2026-11-24 en Python y Apps Script (`probar_adkaora`). Adjunto del último correo de fernando.davila@adkaora.com (ventana `ADKAORA_DIAS`=2, no exige que sea de hoy), guardado con el nombre original (no fijo). Props opcionales: ADKAORA_REMITENTE, ADKAORA_ASUNTO. Python: bandeja `inbox` o `ADKAORA_CARPETA_CORREO_ID`. Probado OK en Apps Script |
 | refinery89 | `Refinery89\Refinery89_Data.csv` | |
 | taboola | `Taboola\DataTaboola.json` | **desactivada desde 2026-11-17** (Taboola ya no está con ellos): código y credenciales comentados en Python; en Apps Script está fuera de `FUENTES` (en `FUENTES_INACTIVAS`, solo corre con `probar_taboola`) |
 | mgid | `MGID\DataMgid.json` | agregada el 2026-11-17 en Python y Apps Script (`probar_mgid`; requiere propiedades MGID_CLIENT_ID y MGID_TOKEN). GET `/v2/pub/account/{MGID_CLIENT_ID}/website-custom-report` con Bearer `MGID_TOKEN`; dimensiones date,website; métricas pageViews,revenue; limit=100 |
@@ -58,6 +59,11 @@ con `clasp` (v3, instalado global). Requisitos del usuario:
   User.Read, Files.ReadWrite, offline_access. Redirect: `https://script.google.com/macros/d/<scriptId>/usercallback`.
   IDs y secreto en `.env` (MS_CLIENT_ID, MS_TENANT_ID, MS_CLIENT_SECRET).
 - **El secreto de cliente vence en noviembre de 2028** → renovarlo en Entra (Certificados y secretos) antes.
+
+## Modo de prueba (2026-11-24)
+Todas las funciones `probar_*` de Main.js escriben siempre en `Fuentes_Datos/Publicidad/Ad_Networks/_pruebas_apps_script`
+(constante `BASE_PRUEBAS` en OneDrive.js), sin importar `ONEDRIVE_BASE`. Solo `ejecutarTodo` (activador) usa `ONEDRIVE_BASE`.
+`probar_trm` necesita una copia de `TRM\EUR\data.xlsx` en esa carpeta.
 
 ## Estado Apps Script (2026-11-10)
 - Código en `apps_script/` (Config, OneDrive, Fuentes, Main). Microsoft autorizado como powerbi@eluniversal.com.co

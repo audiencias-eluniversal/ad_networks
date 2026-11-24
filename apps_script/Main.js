@@ -8,9 +8,11 @@ function ejecutarTodo() {
   ejecutar_(Object.keys(FUENTES));
 }
 
-function ejecutar_(nombres) {
+function ejecutar_(nombres, pruebas) {
+  BASE_PRUEBAS_ACTIVA = !!pruebas;
   const f = calcularFechas();
-  console.log('Rango %s -> %s | fuentes: %s', f.inicio, f.ayer, nombres.join(', '));
+  console.log('Rango %s -> %s | fuentes: %s | destino: %s', f.inicio, f.ayer, nombres.join(', '),
+    pruebas ? 'PRUEBAS (' + BASE_PRUEBAS + ')' : prop('ONEDRIVE_BASE'));
   const fallidas = [];
   // Apps Script corta a los 6 min: no empezar una fuente nueva después de 4,5 min, para alcanzar a
   // guardar el resumen y avisar.
@@ -52,11 +54,12 @@ function pasarAProduccion() {
     prop('ONEDRIVE_BASE'), TZ);
 }
 
-function probar_trm() { ejecutar_(['trm']); }
-function probar_seedtag() { ejecutar_(['seedtag']); }
-function probar_membrana() { ejecutar_(['membrana']); }
-function probar_teads() { ejecutar_(['teads']); }
-function probar_adx() { ejecutar_(['adx']); }
-function probar_refinery89() { ejecutar_(['refinery89']); }
-function probar_mgid() { ejecutar_(['mgid']); }
-function probar_taboola() { ejecutar_(['taboola']); } // Taboola desactivada: solo prueba manual
+function probar_trm() { ejecutar_(['trm'], true); }
+function probar_seedtag() { ejecutar_(['seedtag'], true); }
+function probar_membrana() { ejecutar_(['membrana'], true); }
+function probar_teads() { ejecutar_(['teads'], true); }
+function probar_adx() { ejecutar_(['adx'], true); }
+function probar_adkaora() { ejecutar_(['adkaora'], true); }
+function probar_refinery89() { ejecutar_(['refinery89'], true); }
+function probar_mgid() { ejecutar_(['mgid'], true); }
+function probar_taboola() { ejecutar_(['taboola'], true); } // Taboola desactivada: solo prueba manual

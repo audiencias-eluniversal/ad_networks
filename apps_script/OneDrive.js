@@ -9,6 +9,10 @@
 const MS_SCOPES = 'offline_access Files.ReadWrite User.Read';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
+// Las funciones probar_* activan este modo: todo se escribe en la carpeta de pruebas, nunca en ONEDRIVE_BASE.
+const BASE_PRUEBAS = 'Fuentes_Datos/Publicidad/Ad_Networks/_pruebas_apps_script';
+let BASE_PRUEBAS_ACTIVA = false;
+
 function msRedirectUri_() {
   return 'https://script.google.com/macros/d/' + ScriptApp.getScriptId() + '/usercallback';
 }
@@ -86,7 +90,7 @@ function graph_(metodo, ruta, opciones) {
 
 /** Ruta de Graph para un archivo dentro de ONEDRIVE_BASE (p. ej. "Fuentes_Datos/Publicidad/Ad_Networks"). */
 function rutaItem_(subruta) {
-  const partes = (prop('ONEDRIVE_BASE') + '/' + subruta).split('/').filter(String).map(encodeURIComponent);
+  const partes = ((BASE_PRUEBAS_ACTIVA ? BASE_PRUEBAS : prop('ONEDRIVE_BASE')) + '/' + subruta).split('/').filter(String).map(encodeURIComponent);
   return '/me/drive/root:/' + partes.join('/') + ':';
 }
 

@@ -11,6 +11,7 @@ y formatos que generaba Make (Power BI no necesita cambios).
 | `membrana` | `Membrana\DataMembrana.json` |
 | `teads` | `Teads\DataTeads.json`, `Teads\QueryTeads.json` |
 | `adx` | `AdX_OpenBidding\<adjunto> (inicio - ayer).csv` |
+| `adkaora` | `AdKaora\<nombre del adjunto>` (el del último correo de fernando.davila@adkaora.com) |
 | `refinery89` | `Refinery89\Refinery89_Data.csv` |
 | `mgid` | `MGID\DataMgid.json` |
 | ~~`taboola`~~ | ~~`Taboola\DataTaboola.json`~~ (desactivada, código comentado) |
@@ -41,6 +42,11 @@ Antes, desactiva el escenario en Make para que no escriban los dos a la vez.
 
 Todo está en `.env` (ver `.env.example`). `make_blueprint.json` también contiene secretos en texto plano:
 no lo compartas.
+
+## Versión Apps Script
+
+En `apps_script/` (se sube con `clasp push --force`). Las funciones `probar_<fuente>` corren una sola fuente
+y escriben siempre en `_pruebas_apps_script`; `ejecutarTodo` escribe en `ONEDRIVE_BASE`.
 
 ## Agregar una red nueva
 

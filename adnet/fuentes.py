@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import os
 import time
 from datetime import date, datetime
 
@@ -147,6 +148,38 @@ def adx(f: Fechas) -> None:
     guardar("AdX_OpenBidding", nombre, base64.b64decode(adj["contentBytes"]))
 
 
+# --- AdKaora (adjunto del último correo; se guarda con el nombre que trae el adjunto) --------------
+def adkaora(f: Fechas) -> None:
+    from datetime import timedelta
+
+    from .graph import token_graph
+
+    s = http()
+    s.headers["Authorization"] = f"Bearer {token_graph()}"
+    remitente = env("ADKAORA_REMITENTE", "fernando.davila@adkaora.com")
+    carpeta = env("ADKAORA_CARPETA_CORREO_ID", "inbox")
+    dias = int(os.environ.get("ADKAORA_DIAS", "2"))
+    desde = (datetime.utcnow() - timedelta(days=dias)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    msgs = pedir(s, "GET", f"https://graph.microsoft.com/v1.0/me/mailFolders/{carpeta}/messages", params={
+        "$filter": f"receivedDateTime ge {desde} and from/emailAddress/address eq '{remitente}'",
+        "$orderby": "receivedDateTime desc",
+        "$top": "10",
+        "$select": "id,subject,receivedDateTime,hasAttachments",
+    }).json()["value"]
+    for msg in msgs:
+        if not msg.get("hasAttachments"):
+            continue
+        adjuntos = pedir(s, "GET", f"https://graph.microsoft.com/v1.0/me/messages/{msg['id']}/attachments").json()["value"]
+        adj = next((a for a in adjuntos
+                    if a.get("@odata.type") == "#microsoft.graph.fileAttachment" and not a.get("isInline")), None)
+        if not adj:
+            continue
+        log.info("AdKaora: correo '%s' recibido %s, adjunto '%s'", msg["subject"], msg["receivedDateTime"], adj["name"])
+        guardar("AdKaora", adj["name"], base64.b64decode(adj["contentBytes"]))
+        return
+    raise RuntimeError(f"No hay correo de {remitente} con adjunto en los últimos {dias} días")
+
+
 # --- Ruta 6: Refinery89 ---------------------------------------------------------------------------
 def refinery89(f: Fechas) -> None:
     r = pedir(http(), "GET", "https://publisher.refinery89.com/api/report",
@@ -196,6 +229,7 @@ FUENTES = {
     "membrana": membrana,
     "teads": teads,
     "adx": adx,
+    "adkaora": adkaora,
     "refinery89": refinery89,
     # "taboola": taboola,  # desactivada
     "mgid": mgid,

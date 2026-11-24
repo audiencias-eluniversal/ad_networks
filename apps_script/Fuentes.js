@@ -128,6 +128,27 @@ function fuenteAdx(f) {
     'AdX_OpenBidding.csv queda con los datos anteriores');
 }
 
+// --- AdKaora: adjunto del último correo recibido en el Gmail de este proyecto ----------------------
+// Se guarda con el nombre que trae el adjunto (no es fijo).
+function fuenteAdkaora(f) {
+  const remitente = prop('ADKAORA_REMITENTE', 'fernando.davila@adkaora.com');
+  const asunto = prop('ADKAORA_ASUNTO', '');
+  const dias = Number(prop('ADKAORA_DIAS', '2'));
+  const q = 'from:' + remitente + ' has:attachment newer_than:' + dias + 'd' + (asunto ? ' subject:"' + asunto + '"' : '');
+  const mensajes = GmailApp.search(q, 0, 5)
+    .reduce((acc, hilo) => acc.concat(hilo.getMessages()), [])
+    .filter((m) => m.getFrom().toLowerCase().indexOf(remitente.toLowerCase()) >= 0)
+    .sort((a, b) => b.getDate() - a.getDate());
+  for (const msg of mensajes) {
+    const adj = msg.getAttachments({ includeInlineImages: false })[0];
+    if (!adj) continue;
+    console.log("AdKaora: correo '%s' del %s, adjunto '%s'", msg.getSubject(), msg.getDate(), adj.getName());
+    guardar('AdKaora', adj.getName(), adj.copyBlob());
+    return;
+  }
+  throw new Error('No hay correo de ' + remitente + ' con adjunto en los últimos ' + dias + ' días');
+}
+
 // --- Refinery89 -----------------------------------------------------------------------------------
 function fuenteRefinery89(f) {
   const r = pedir('https://publisher.refinery89.com/api/report?' + qs([['start', f.inicio], ['end', f.ayer]]),
@@ -175,6 +196,7 @@ const FUENTES = {
   trm: fuenteTrm,
   seedtag: fuenteSeedtag,
   adx: fuenteAdx,
+  adkaora: fuenteAdkaora,
   refinery89: fuenteRefinery89,
   mgid: fuenteMgid,
   // taboola: fuenteTaboola,  // desactivada
