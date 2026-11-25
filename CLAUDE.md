@@ -1,90 +1,77 @@
 # Ad Networks – contexto para Claude
 
-Reemplazo en Python del escenario de Make **Ad_Networks** (blueprint original: `make_blueprint.json`,
-contiene secretos, no compartir). Descarga reportes de redes publicitarias y los guarda en la carpeta
-sincronizada de OneDrive, que consume Power BI. Ver `README.md` para uso.
+Descarga reportes de redes publicitarias y los guarda en OneDrive, que consume Power BI. Reemplaza el
+escenario de Make **Ad_Networks** (`make_blueprint.json`: tiene secretos, no compartir). Uso en `README.md`.
+
+**Producción = Apps Script** (`apps_script/`, desde 2026-11-17). Python (`adnet/`, `run.py`) es la referencia
+funcional y sirve para probar rápido en local; toda fuente nueva se implementa en AMBOS.
 
 ## Estructura
-- `run.py` – CLI. `python run.py` corre TODAS las fuentes; `python run.py teads taboola` solo esas;
-  `python run.py login` solo inicia sesión de Microsoft; `--hoy YYYY-MM-DD` simula otra fecha.
-- `adnet/fuentes.py` – una función por red, registrada en `FUENTES`.
-- `adnet/comun.py` – `.env`, fechas (`Fechas.inicio` = hoy−40, `Fechas.ayer`), `pedir()` y `guardar()` (escritura atómica).
-- `adnet/graph.py` – Microsoft Graph para leer el correo de AdX.
-- `.env` – credenciales y la ruta `ONEDRIVE_AD_NETWORKS`. `logs/AAAA-MM.log` – logs.
-- `programar_tarea.ps1` – registra la tarea diaria en el Programador de tareas (aún no registrada).
+- `run.py` – CLI: `python run.py [fuente ...]`, `--listar`, `--hoy YYYY-MM-DD`, `login` (sesión Microsoft, solo AdX en Python).
+- `adnet/fuentes.py` – una función por red, registrada en `FUENTES`. `adnet/comun.py` – `.env`, fechas
+  (`inicio` = hoy−40, `ayer`), `pedir()`, `guardar()` (escritura atómica). `adnet/graph.py` – correo de AdX.
+- `apps_script/` – `Config.js` (props, fechas, `pedir`), `OneDrive.js` (Graph), `Fuentes.js` (`FUENTES`),
+  `Main.js` (`ejecutarTodo`, `probar_<fuente>`, `pasarAProduccion`).
+- `.env` (ignorado) – credenciales locales y `ONEDRIVE_AD_NETWORKS`; `.env.example` lista las variables sin valores.
 
-## Fuentes y salidas (subcarpetas de `ONEDRIVE_AD_NETWORKS`)
+## Fuentes (salida en `Fuentes_Datos/Publicidad/Ad_Networks/<carpeta>`)
+Los formatos replican los de Make y Power BI depende de ellos: **no cambiarlos sin confirmar**.
+
 | Fuente | Salida | Notas |
 |---|---|---|
-| trm | `TRM\TRM_diario.json` + fila en `TRM\EUR\data.xlsx` (Hoja1: Fecha, EUR) | TRM filtrada por año en curso; EUR→USD de floatrates; no duplica fechas |
-| seedtag | `Seedtag\DataSeedtag.json` | `api_key` va como query param, no header |
-| membrana | `Membrana\DataMembrana.json` | código listo; en nov-2026 la API no respondía por una falla temporal del proveedor (no requiere cambios) |
-| teads | `Teads\DataTeads.json`, `Teads\QueryTeads.json` | dos tokens: uno para crear el reporte, otro para consultarlo |
-| adx | `AdX_OpenBidding\AdX_OpenBidding.csv` | nombre fijo (se reemplaza a diario). Correo de admanager-noreply@google.com en Outlook.com personal; `GRAPH_TENANT=consumers`; sesión en `.graph_token_cache.json`. El reporte de GAM cubre 30 días y llega ~7:00 |
-| adkaora | `AdKaora\<nombre del adjunto>` | agregada el 2026-11-24 en Python y Apps Script (`probar_adkaora`). Adjunto del último correo de fernando.davila@adkaora.com (ventana `ADKAORA_DIAS`=2, no exige que sea de hoy), guardado con el nombre original (no fijo). Props opcionales: ADKAORA_REMITENTE, ADKAORA_ASUNTO. Python: bandeja `inbox` o `ADKAORA_CARPETA_CORREO_ID`. Probado OK en Apps Script |
+| trm | `TRM\TRM_diario.json` + filas en `TRM\EUR\data.xlsx` (Hoja1: Fecha, EUR) | TRM del año en curso; EUR→USD de floatrates; no duplica fechas |
+| seedtag | `Seedtag\DataSeedtag.json` | `api_key` va como query param |
+| membrana | `Membrana\DataMembrana.json` | en nov-2026 la API falló por el proveedor; el código no necesita cambios |
+| teads | `Teads\DataTeads.json`, `QueryTeads.json` | dos tokens: crear reporte / consultarlo |
+| adx | `AdX_OpenBidding\AdX_OpenBidding.csv` | adjunto del correo de GAM (~7:00, cubre 30 días); en Apps Script se lee con GmailApp, en Python con Graph |
+| adkaora | `AdKaora\<nombre del adjunto>` | adjunto del último correo de fernando.davila@adkaora.com (ventana `ADKAORA_DIAS`=2, no exige que sea de hoy), guardado con el nombre original (no fijo). Props opcionales `ADKAORA_REMITENTE`, `ADKAORA_ASUNTO`. En Python lee la bandeja `inbox` (o `ADKAORA_CARPETA_CORREO_ID`) por Graph |
 | refinery89 | `Refinery89\Refinery89_Data.csv` | |
-| meta | `Meta\DataMeta.json` | agregada el 2026-11-25 en Python y Apps Script (`probar_meta`). Graph API v23 `/{page_id}/insights`: `monetization_approximate_earnings` (= `total_earnings`) y con `breakdown=monetization_tool` (= `earnings_by_tool`: content_monetization, instream_ads, stars, subscriptions). Cada día es el de `start_time` (hora del Pacífico); `until` es exclusivo. No existe una métrica `video_earnings`. Requiere `META_PAGE_TOKEN` (token de página con read_insights, no expira; acceso a datos vence ~2027-02-19) y `META_PAGE_ID` (opcional, 127926969701); en Python van en `.env`, en Apps Script en Propiedades del script. `auth.json` se eliminó el 2026-11-25; el token vive en `.env` y en las propiedades del script. Python probado contra `pruebas_claude` (idéntico a la referencia); Apps Script subido y probado OK con `probar_meta` el 2026-11-25 (META_PAGE_TOKEN ya estaba en las propiedades del script) |
-| taboola | `Taboola\DataTaboola.json` | **desactivada desde 2026-11-17** (Taboola ya no está con ellos): código y credenciales comentados en Python; en Apps Script está fuera de `FUENTES` (en `FUENTES_INACTIVAS`, solo corre con `probar_taboola`) |
-| mgid | `MGID\DataMgid.json` | agregada el 2026-11-17 en Python y Apps Script (`probar_mgid`; requiere propiedades MGID_CLIENT_ID y MGID_TOKEN). GET `/v2/pub/account/{MGID_CLIENT_ID}/website-custom-report` con Bearer `MGID_TOKEN`; dimensiones date,website; métricas pageViews,revenue; limit=100 |
+| mgid | `MGID\DataMgid.json` | props `MGID_CLIENT_ID`, `MGID_TOKEN` |
+| meta | `Meta\DataMeta.json` | prop `META_PAGE_TOKEN` (token de la PÁGINA); `META_PAGE_ID` opcional. Insights `monetization_approximate_earnings`, total y por herramienta. No existe una métrica `video_earnings`. El acceso a datos del token vence ~2027-02-19 (renovarlo) |
+| momagic | `Momagic\DataMomagic.json` | props `MOMAGIC_USER`, `MOMAGIC_PASS`, `MOMAGIC_BASIC_AUTH`. Login con cookie `id`; lista JSON = `stats.data` |
+| taboola | `Taboola\DataTaboola.json` | **desactivada** (ya no están con ellos): en Apps Script está en `FUENTES_INACTIVAS`, solo corre con `probar_taboola` |
 
-Los formatos replican exactamente los de Make (Power BI depende de ellos): no cambiarlos sin confirmar.
+Convenciones de toda fuente: rango hoy−40 → ayer; si una consulta falla o no trae filas, **lanzar error y no
+escribir** (queda el archivo anterior y Google envía el correo de falla). Los IDs públicos (p. ej. página de
+Meta, publishers de Seedtag) pueden ir en el código; tokens, claves y contraseñas **solo** en `.env` y en
+Propiedades del script, nunca en el código ni en `.env.example`.
+
+## Cómo agregar una fuente
+1. Función en `adnet/fuentes.py` + `FUENTES`; variables en `.env.example` (sin valores).
+2. `fuenteX` en `Fuentes.js` + `FUENTES`, y `probar_x()` en `Main.js`.
+3. Probar en Python contra una carpeta de pruebas (`ONEDRIVE_AD_NETWORKS` en `.env`), nunca la real.
+4. El usuario crea las propiedades en Apps Script **antes** del push (si no, la fuente falla en la corrida de las 7:30).
+5. `clasp push --force` desde `apps_script/` y el usuario corre `probar_x` desde el editor (escribe en `_pruebas_apps_script`, no en la carpeta real).
+6. Actualizar la tabla de arriba, commit y push.
 
 ## Forma de trabajo con el usuario
-- Ir **paso a paso** y explicar antes de ejecutar.
-- **Nunca correr contra el OneDrive real sin confirmar.** Para probar, apuntar a la carpeta de pruebas:
-  `$env:ONEDRIVE_AD_NETWORKS = "D:\vbetancurt\Downloads\ad_networks\pruebas_claude"` (necesita una copia de
-  `TRM\EUR\data.xlsx` ahí para la fuente trm).
-- Responder en español.
+- Responder en español. Ir **paso a paso** y explicar antes de ejecutar.
+- **Nunca escribir en el OneDrive real sin confirmar.**
+- Los pasos interactivos (login de clasp, de GitHub, correr funciones en el editor) los hace el usuario; los
+  comandos con `!` corren en bash: usar `/` en las rutas.
 
-## Dirección actual: migración a Google Apps Script (decidida 2026-11-10)
-La versión Python queda como referencia funcional. El destino es Apps Script en `apps_script/`, administrado
-con `clasp` (v3, instalado global). Requisitos del usuario:
-- Los archivos **deben seguir en OneDrive** (Power BI) → subir vía Microsoft Graph con una app registrada en
-  Entra ID de Editora del Mar (Files.ReadWrite + offline_access); puede requerir aprobación de TI.
-- AdX **por correo, leído con GmailApp**: el proyecto Apps Script vive en una cuenta Gmail distinta a la de GAM
-  (decisión del usuario: no usar la API de GAM). El informe programado de GAM debe llegar a ese Gmail
-  (agregarlo como destinatario en GAM o reenviar desde Outlook.com). No hace falta Google Cloud ni Graph para correo.
-- Se probará contra una carpeta de pruebas en OneDrive antes de tocar las reales.
-- VPS: posible a futuro, no por ahora.
-
-## Apps Script / Microsoft
-- Proyecto Apps Script en `audienciaseluniversal@gmail.com`, scriptId en `apps_script/.clasp.json`, zona America/Bogota.
-  `clasp push` puede decir "Skipping push" al cambiar el manifiesto → usar `clasp push --force`.
-  Ojo: borrar un archivo local y hacer push puede decir "already up to date" y dejarlo en Google; hace falta
-  algún cambio de contenido para que el push se ejecute. Verificar con `clasp clone-script` en carpeta temporal
-  (y borrarla después: puede traer secretos).
-- Credenciales en Propiedades del script (cargadas el 2026-11-10). `ONEDRIVE_BASE` apunta hoy a
-  `Fuentes_Datos/Publicidad/Ad_Networks/_pruebas_apps_script`; cambiar a `Fuentes_Datos/Publicidad/Ad_Networks`
-  cuando se pase a producción.
-- App de Entra ID "Ad Networks Apps Script" (inquilino único Editora del Mar), permisos delegados
-  User.Read, Files.ReadWrite, offline_access. Redirect: `https://script.google.com/macros/d/<scriptId>/usercallback`.
-  IDs y secreto en `.env` (MS_CLIENT_ID, MS_TENANT_ID, MS_CLIENT_SECRET).
-- **El secreto de cliente vence en noviembre de 2028** → renovarlo en Entra (Certificados y secretos) antes.
-
-## Modo de prueba (2026-11-24)
-Todas las funciones `probar_*` de Main.js escriben siempre en `Fuentes_Datos/Publicidad/Ad_Networks/_pruebas_apps_script`
-(constante `BASE_PRUEBAS` en OneDrive.js), sin importar `ONEDRIVE_BASE`. Solo `ejecutarTodo` (activador) usa `ONEDRIVE_BASE`.
-`probar_trm` necesita una copia de `TRM\EUR\data.xlsx` en esa carpeta.
-
-## Estado Apps Script (2026-11-10)
-- Código en `apps_script/` (Config, OneDrive, Fuentes, Main). Microsoft autorizado como powerbi@eluniversal.com.co
-  (es la misma cuenta del OneDrive sincronizado en el PC).
-- Probado en `_pruebas_apps_script`: trm (incl. fila Excel), seedtag, teads, refinery89, taboola → idénticos a Make.
-- GAM ya envía el informe directo a audienciaseluniversal@gmail.com (configurado por el usuario).
-
-## Paso a producción (2026-11-17)
-`pasarAProduccion()` en Main.js (idempotente) cambia ONEDRIVE_BASE a la carpeta real y crea un único activador
-diario de `ejecutarTodo` (~7:30 Bogotá; Google lo corre dentro de ±15 min). El usuario debe correrlo, poner la
-notificación de fallas en "Inmediatamente" en la UI de Activadores y desactivar Make antes del día siguiente.
+## Apps Script / Microsoft / Git
+- Proyecto en `audienciaseluniversal@gmail.com` (scriptId en `apps_script/.clasp.json`), zona America/Bogota.
+  Editor: `https://script.google.com/d/<scriptId>/edit`. Subir con `clasp push --force` (sin `--force` puede
+  decir "Skipping push"; borrar un archivo local puede no reflejarse sin otro cambio de contenido).
+- `ONEDRIVE_BASE` = `Fuentes_Datos/Publicidad/Ad_Networks` (producción). `ejecutarTodo` corre con un activador
+  diario ~7:30 (±15 min), creado por `pasarAProduccion()` (idempotente). Primero van las fuentes rápidas;
+  corta a los 4,5 min para no pasar el límite de 6.
+- OneDrive vía Graph con la app de Entra ID "Ad Networks Apps Script" (inquilino único Editora del Mar; Files.ReadWrite,
+  offline_access), autorizada como powerbi@eluniversal.com.co. IDs y secreto en `.env` y Propiedades del
+  script (`MS_*`). **El secreto vence en noviembre de 2028**: renovarlo en Entra antes.
+- AdX: GAM envía el informe a audienciaseluniversal@gmail.com; no se usa la API de GAM.
+- Git: bajo `D:\workspaces\` el commit sale como Audiencias El Universal (`audienciaseluniversal@gmail.com`) y el
+  push como el usuario de GitHub `audiencias-eluniversal` (config en `~/.gitconfig-trabajo`, credencial aparte
+  de `nododigital`). Remoto `audiencias-eluniversal/ad_networks`, rama `main`.
+- **Modo de prueba (2026-11-24):** toda `probar_*` de `Main.js` escribe siempre en `Fuentes_Datos/Publicidad/Ad_Networks/_pruebas_apps_script` (`BASE_PRUEBAS` en `OneDrive.js`), sin importar `ONEDRIVE_BASE`; solo `ejecutarTodo` escribe en producción. `probar_trm` necesita ahí una copia de `TRM\EUR\data.xlsx`.
 
 ## Pendientes
-1. Probar `probar_adx` cuando llegue el primer correo de GAM al Gmail (~7:00).
-2. Cambiar `ONEDRIVE_BASE` a `Fuentes_Datos/Publicidad/Ad_Networks` (producción) y borrar `_pruebas_apps_script`.
-3. Trigger diario (≥ 7:30, notificación de fallas inmediata) — **el usuario pidió no crearlo todavía**.
-4. Desactivar el escenario en Make el mismo día que arranque el trigger.
-5. Opcional: revisión de "datos de ayer" y resumen por correo.
-6. Recomendado: rotar las credenciales que estuvieron en el blueprint exportado.
-7. Propuesto (sin decidir): reemplazar `TRM\EUR\data.xlsx` por `TRM\EUR\eur_usd.csv` (`fecha,eur_usd`, ISO,
-   reescrito completo y ordenado cada día). Requiere cambiar el origen en Power BI con configuración regional
-   Inglés (EE. UU.). Probar primero en `_pruebas_apps_script`. El 2026-11-11 se quitaron 12 filas duplicadas de
-   data.xlsx (260 → 248); el respaldo quedó en `D:\vbetancurt\Downloads\ad_networks\pruebas_claude\respaldo_data_20261111_0847.xlsx`.
+1. Confirmar con el usuario: Make desactivado, notificación de fallas del activador en "Inmediatamente", y
+   `adx` funcionando en producción.
+2. Power BI debe leer `Meta\DataMeta.json` y `Momagic\DataMomagic.json` (archivos nuevos).
+3. Recomendado: rotar las credenciales que estuvieron en el blueprint exportado.
+4. Opcional: revisión de "datos de ayer" y resumen por correo.
+5. Propuesto (sin decidir): cambiar `TRM\EUR\data.xlsx` por `TRM\EUR\eur_usd.csv` (`fecha,eur_usd`, ISO, reescrito
+   completo cada día); exige cambiar el origen en Power BI (configuración regional Inglés EE. UU.). Probar antes
+   en una carpeta de pruebas.

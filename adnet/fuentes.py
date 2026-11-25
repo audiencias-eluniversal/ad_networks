@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import base64
 import os
+import json
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 from .comun import Fechas, env, guardar, http, log, pedir
 
@@ -223,52 +224,97 @@ def mgid(f: Fechas) -> None:
     guardar("MGID", "DataMgid.json", r.content)
 
 
-# --- Ruta 9: Meta (ganancias de monetización de la página de Facebook) ----------------------------
-META_HERRAMIENTAS = ["content_monetization", "instream_ads", "stars", "subscriptions"]
+# --- Ruta 9: Meta (ingresos de monetización de una Página de Facebook, Graph API oficial) ----------
+META_API = "https://graph.facebook.com/v23.0"
+META_PAGINA_DEFECTO = "127926969701"
+
+
+def _meta_insights(s, pagina: str, token: str, f: Fechas, **extra) -> list:
+    # 'until' es exclusivo en la API: se suma un día para incluir el último (ayer).
+    hasta = (date.fromisoformat(f.ayer) + timedelta(days=1)).isoformat()
+    r = s.get(f"{META_API}/{pagina}/insights", timeout=60, params={
+        "metric": "monetization_approximate_earnings", "period": "day",
+        "since": f.inicio, "until": hasta, "access_token": token, **extra})
+    j = r.json()
+    if "error" in j:
+        raise RuntimeError(f"Meta insights {extra or 'total'}: {j['error'].get('message')} "
+                           f"(code {j['error'].get('code')})")
+    return j["data"]
+
+
+def _meta_diario(valores: list, clave: str | None = None) -> list:
+    salida = []
+    for v in valores:
+        # start_time (si viene) es el inicio del día; si no, end_time es el día siguiente.
+        if v.get("start_time"):
+            d = v["start_time"][:10]
+        else:
+            d = (date.fromisoformat(v["end_time"][:10]) - timedelta(days=1)).isoformat()
+        salida.append({"date": d, "value": v["value"], **({clave: v[clave]} if clave else {})})
+    return salida
 
 
 def meta(f: Fechas) -> None:
-    import json
-    from datetime import timedelta, timezone
-
     s = http()
+    pagina = env("META_PAGE_ID", META_PAGINA_DEFECTO)
     token = env("META_PAGE_TOKEN")
-    pagina = env("META_PAGE_ID", "127926969701")
-    # "until" de Meta es exclusivo: se pide hasta ayer + 1. Cada valor trae su día (hora del Pacífico).
-    hasta = (date.fromisoformat(f.ayer) + timedelta(days=1)).isoformat()
 
-    def insights(**extra) -> list[dict]:
-        r = pedir(s, "GET", f"https://graph.facebook.com/v23.0/{pagina}/insights",
-                  headers={"Authorization": f"Bearer {token}"},
-                  params={"metric": "monetization_approximate_earnings", "period": "day",
-                          "since": f.inicio, "until": hasta, **extra})
-        return r.json()["data"][0]["values"]
+    total = _meta_diario(_meta_insights(s, pagina, token, f)[0]["values"])
+    por_herramienta: dict[str, list] = {}
+    datos = _meta_insights(s, pagina, token, f, breakdown="monetization_tool")
+    for p in _meta_diario(datos[0]["values"], "monetization_tool"):
+        por_herramienta.setdefault(p["monetization_tool"], []).append(
+            {"date": p["date"], "value": p["value"]})
 
-    def dia(v: dict) -> str:
-        if "start_time" in v:
-            return v["start_time"][:10]
-        return (date.fromisoformat(v["end_time"][:10]) - timedelta(days=1)).isoformat()
-
-    def serie(vals: list[dict]) -> dict:
-        daily = [{"date": dia(v), "value": v["value"]} for v in vals]
-        return {"total": round(sum(x["value"] for x in daily), 2), "daily": daily}
-
-    errors: dict = {}
-    total = serie(insights())
-    vals = insights(breakdown="monetization_tool")
-    por_tool = {h: serie([v for v in vals if v["monetization_tool"] == h]) for h in META_HERRAMIENTAS}
-    nuevas = {v["monetization_tool"] for v in vals} - set(META_HERRAMIENTAS)
-    if nuevas:
-        errors["herramientas_nuevas"] = sorted(nuevas)
-
-    ahora = datetime.now(timezone.utc)
-    salida = {
+    # Si algo falló ya se lanzó el error arriba: no se escribe nada y el archivo anterior queda intacto.
+    resultado = {
         "page_id": pagina, "start": f.inicio, "end": f.ayer, "currency": "USD",
-        "fetched_at": ahora.strftime("%Y-%m-%dT%H:%M:%S.") + f"{ahora.microsecond // 1000:03d}Z",
-        "metrics": {"total_earnings": total, "earnings_by_tool": por_tool},
-        "errors": errors,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "metrics": {
+            "total_earnings": {"total": round(sum(p["value"] for p in total), 2), "daily": total},
+            "earnings_by_tool": {
+                t: {"total": round(sum(x["value"] for x in pts), 2), "daily": pts}
+                for t, pts in por_herramienta.items()},
+        },
+        "errors": {},
     }
-    guardar("Meta", "DataMeta.json", json.dumps(salida, indent=2))
+    guardar("Meta", "DataMeta.json", json.dumps(resultado, ensure_ascii=False, indent=2))
+
+
+# --- Ruta 10: Momagic (dsp-ssps.momagic.com; login por formulario + cookie 'id') --------------------
+MOMAGIC_URL = "https://dsp-ssps.momagic.com"
+
+
+def momagic(f: Fechas) -> None:
+    s = http()
+    s.headers.update({
+        "accept": "application/json, text/plain, */*",
+        "origin": MOMAGIC_URL,
+        "referer": f"{MOMAGIC_URL}/login",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+    })
+    # 1. Login: responde 303 y deja la cookie 'id' en la sesión.
+    pedir(s, "POST", f"{MOMAGIC_URL}/authenticate/userpass",
+          data={"username": env("MOMAGIC_USER"), "password": env("MOMAGIC_PASS")})
+    if "id" not in s.cookies:
+        raise RuntimeError("Momagic: el login no devolvió la cookie 'id' (¿credenciales?)")
+
+    # 2. Estadísticas por día (date_as_dimension): 40 días = 40 filas; pagesize 100 deja margen.
+    r = pedir(s, "POST", f"{MOMAGIC_URL}/reporting/gamreportData/report/stats",
+              headers={"authorization": f"Basic {env('MOMAGIC_BASIC_AUTH')}",
+                       "referer": f"{MOMAGIC_URL}/"},
+              data={
+                  "pagesize": "100", "startindex": "1", "language": "0", "currency": "2",
+                  "sdate": f.inicio, "edate": f.ayer,
+                  "domain": '["all"]', "adunit": '["none"]',
+                  "impression": "true", "click": "true", "ctr": "true", "revenue": "true",
+                  "ecpm": "true", "date_as_dimension": "true", "roundoffmetric": "true",
+              })
+    filas = r.json().get("stats", {}).get("data", [])
+    if not filas:
+        raise RuntimeError(f"Momagic: la respuesta no trae filas en stats.data: {r.text[:300]}")
+    guardar("Momagic", "DataMomagic.json", json.dumps(filas, indent=2, ensure_ascii=False))
 
 
 FUENTES = {
@@ -282,4 +328,5 @@ FUENTES = {
     # "taboola": taboola,  # desactivada
     "mgid": mgid,
     "meta": meta,
+    "momagic": momagic,
 }

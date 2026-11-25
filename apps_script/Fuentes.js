@@ -170,44 +170,101 @@ function fuenteMgid(f) {
   guardar('MGID', 'DataMgid.json', r.getContent());
 }
 
-// --- Meta: ganancias de monetización de la página de Facebook ----------------------------------------
-// Requiere la propiedad META_PAGE_TOKEN (token de página con read_insights). META_PAGE_ID es opcional.
-const META_HERRAMIENTAS = ['content_monetization', 'instream_ads', 'stars', 'subscriptions'];
+// --- Meta: ingresos de monetización de una Página de Facebook (Graph API oficial) -----------------
+const META_API = 'https://graph.facebook.com/v23.0';
+
+function metaInsights_(pagina, token, f, extra) {
+  // 'until' es exclusivo en la API: se suma un día para incluir el último (ayer).
+  const hasta = Utilities.formatDate(new Date(new Date(f.ayer + 'T12:00:00Z').getTime() + 86400000), 'UTC', 'yyyy-MM-dd');
+  const pares = [['metric', 'monetization_approximate_earnings'], ['period', 'day'],
+    ['since', f.inicio], ['until', hasta], ['access_token', token]].concat(extra || []);
+  const r = UrlFetchApp.fetch(META_API + '/' + pagina + '/insights?' + qs(pares), { muteHttpExceptions: true });
+  const j = JSON.parse(r.getContentText());
+  if (j.error) {
+    throw new Error('Meta insights ' + (extra && extra.length ? extra.map((e) => e.join('=')).join(',') : 'total') +
+      ': ' + j.error.message + ' (code ' + j.error.code + ')');
+  }
+  return j.data;
+}
+
+function metaDiario_(valores, clave) {
+  return valores.map((v) => {
+    // start_time (si viene) es el inicio del día; si no, end_time es el día siguiente.
+    const d = v.start_time ? v.start_time.slice(0, 10)
+      : Utilities.formatDate(new Date(new Date(v.end_time.slice(0, 10) + 'T12:00:00Z').getTime() - 86400000), 'UTC', 'yyyy-MM-dd');
+    const o = { date: d, value: v.value };
+    if (clave) o[clave] = v[clave];
+    return o;
+  });
+}
 
 function fuenteMeta(f) {
-  const token = prop('META_PAGE_TOKEN');
   const pagina = prop('META_PAGE_ID', '127926969701');
-  const dia1 = (iso, n) => Utilities.formatDate(new Date(Date.parse(iso + 'T12:00:00Z') + n * 86400000), 'UTC', 'yyyy-MM-dd');
-  const hasta = dia1(f.ayer, 1); // "until" de Meta es exclusivo
+  const token = prop('META_PAGE_TOKEN');
+  const suma = (pts) => Math.round(pts.reduce((a, p) => a + p.value, 0) * 100) / 100;
 
-  const insights = (extra) => {
-    const r = pedir('https://graph.facebook.com/v23.0/' + pagina + '/insights?' + qs([
-      ['metric', 'monetization_approximate_earnings'], ['period', 'day'],
-      ['since', f.inicio], ['until', hasta]].concat(extra || [])),
-      { headers: { Authorization: 'Bearer ' + token } });
-    return JSON.parse(r.getContentText()).data[0].values;
-  };
-  // Cada valor trae su día (hora del Pacífico): start_time, o end_time - 1 día si no viene.
-  const dia = (v) => v.start_time ? v.start_time.slice(0, 10) : dia1(v.end_time.slice(0, 10), -1);
-  const serie = (vals) => {
-    const daily = vals.map((v) => ({ date: dia(v), value: v.value }));
-    return { total: Math.round(daily.reduce((s, x) => s + x.value, 0) * 100) / 100, daily: daily };
-  };
+  const total = metaDiario_(metaInsights_(pagina, token, f)[0].values);
+  const porHerramienta = {};
+  const datos = metaInsights_(pagina, token, f, [['breakdown', 'monetization_tool']]);
+  metaDiario_(datos[0].values, 'monetization_tool').forEach((p) => {
+    (porHerramienta[p.monetization_tool] = porHerramienta[p.monetization_tool] || []).push({ date: p.date, value: p.value });
+  });
 
-  const errors = {};
-  const total = serie(insights());
-  const vals = insights([['breakdown', 'monetization_tool']]);
-  const porTool = {};
-  META_HERRAMIENTAS.forEach((h) => { porTool[h] = serie(vals.filter((v) => v.monetization_tool === h)); });
-  const nuevas = vals.map((v) => v.monetization_tool).filter((t, i, a) => META_HERRAMIENTAS.indexOf(t) < 0 && a.indexOf(t) === i);
-  if (nuevas.length) errors.herramientas_nuevas = nuevas.sort();
-
-  guardar('Meta', 'DataMeta.json', JSON.stringify({
+  // Si algo falló ya se lanzó el error arriba: no se escribe nada y el archivo anterior queda intacto.
+  const earningsByTool = {};
+  Object.keys(porHerramienta).forEach((t) => { earningsByTool[t] = { total: suma(porHerramienta[t]), daily: porHerramienta[t] }; });
+  const resultado = {
     page_id: pagina, start: f.inicio, end: f.ayer, currency: 'USD',
     fetched_at: new Date().toISOString(),
-    metrics: { total_earnings: total, earnings_by_tool: porTool },
-    errors: errors,
-  }, null, 2));
+    metrics: { total_earnings: { total: suma(total), daily: total }, earnings_by_tool: earningsByTool },
+    errors: {},
+  };
+  guardar('Meta', 'DataMeta.json', JSON.stringify(resultado, null, 2));
+}
+
+// --- Momagic (dsp-ssps.momagic.com): login por formulario + cookie 'id' ----------------------------
+const MOMAGIC_URL = 'https://dsp-ssps.momagic.com';
+const MOMAGIC_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36';
+
+function fuenteMomagic(f) {
+  // 1. Login: responde 303 con la cookie 'id'. UrlFetchApp no tiene cookie jar: no se sigue la
+  //    redirección y se leen los Set-Cookie de la respuesta.
+  const login = UrlFetchApp.fetch(MOMAGIC_URL + '/authenticate/userpass', {
+    method: 'post',
+    payload: { username: prop('MOMAGIC_USER'), password: prop('MOMAGIC_PASS') },
+    followRedirects: false,
+    muteHttpExceptions: true,
+    headers: { origin: MOMAGIC_URL, referer: MOMAGIC_URL + '/login', 'user-agent': MOMAGIC_UA },
+  });
+  const code = login.getResponseCode();
+  if (code >= 400) throw new Error('Momagic login -> HTTP ' + code + ': ' + login.getContentText().slice(0, 300));
+  const sc = login.getAllHeaders()['Set-Cookie'];
+  const cookies = (Array.isArray(sc) ? sc : (sc ? [sc] : [])).map((c) => c.split(';')[0].trim());
+  if (!cookies.some((c) => c.indexOf('id=') === 0)) {
+    throw new Error("Momagic: el login (HTTP " + code + ") no devolvió la cookie 'id' (¿credenciales?)");
+  }
+
+  // 2. Estadísticas por día (date_as_dimension): 40 días = 40 filas; pagesize 100 deja margen.
+  const r = pedir(MOMAGIC_URL + '/reporting/gamreportData/report/stats', {
+    method: 'post',
+    headers: {
+      authorization: 'Basic ' + prop('MOMAGIC_BASIC_AUTH'),
+      cookie: cookies.join('; '),
+      origin: MOMAGIC_URL, referer: MOMAGIC_URL + '/', 'user-agent': MOMAGIC_UA,
+      accept: 'application/json, text/plain, */*',
+    },
+    payload: {
+      pagesize: '100', startindex: '1', language: '0', currency: '2',
+      sdate: f.inicio, edate: f.ayer,
+      domain: '["all"]', adunit: '["none"]',
+      impression: 'true', click: 'true', ctr: 'true', revenue: 'true',
+      ecpm: 'true', date_as_dimension: 'true', roundoffmetric: 'true',
+    },
+  });
+  const j = JSON.parse(r.getContentText());
+  const filas = (j.stats && j.stats.data) || [];
+  if (!filas.length) throw new Error('Momagic: la respuesta no trae filas en stats.data: ' + r.getContentText().slice(0, 300));
+  guardar('Momagic', 'DataMomagic.json', JSON.stringify(filas, null, 2));
 }
 
 // --- Taboola (DESACTIVADA: ya no está con nosotros por ahora) -------------------------------------
@@ -240,6 +297,7 @@ const FUENTES = {
   refinery89: fuenteRefinery89,
   mgid: fuenteMgid,
   meta: fuenteMeta,
+  momagic: fuenteMomagic,
   // taboola: fuenteTaboola,  // desactivada
   teads: fuenteTeads,
   membrana: fuenteMembrana,
