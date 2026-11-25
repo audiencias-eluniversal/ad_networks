@@ -4,4 +4,3 @@ make_blueprint.json
 logs/
 __pycache__/
 apps_script/_ConfigTemporal.js
-auth.json
