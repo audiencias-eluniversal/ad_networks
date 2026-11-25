@@ -170,6 +170,46 @@ function fuenteMgid(f) {
   guardar('MGID', 'DataMgid.json', r.getContent());
 }
 
+// --- Meta: ganancias de monetización de la página de Facebook ----------------------------------------
+// Requiere la propiedad META_PAGE_TOKEN (token de página con read_insights). META_PAGE_ID es opcional.
+const META_HERRAMIENTAS = ['content_monetization', 'instream_ads', 'stars', 'subscriptions'];
+
+function fuenteMeta(f) {
+  const token = prop('META_PAGE_TOKEN');
+  const pagina = prop('META_PAGE_ID', '127926969701');
+  const dia1 = (iso, n) => Utilities.formatDate(new Date(Date.parse(iso + 'T12:00:00Z') + n * 86400000), 'UTC', 'yyyy-MM-dd');
+  const hasta = dia1(f.ayer, 1); // "until" de Meta es exclusivo
+
+  const insights = (extra) => {
+    const r = pedir('https://graph.facebook.com/v23.0/' + pagina + '/insights?' + qs([
+      ['metric', 'monetization_approximate_earnings'], ['period', 'day'],
+      ['since', f.inicio], ['until', hasta]].concat(extra || [])),
+      { headers: { Authorization: 'Bearer ' + token } });
+    return JSON.parse(r.getContentText()).data[0].values;
+  };
+  // Cada valor trae su día (hora del Pacífico): start_time, o end_time - 1 día si no viene.
+  const dia = (v) => v.start_time ? v.start_time.slice(0, 10) : dia1(v.end_time.slice(0, 10), -1);
+  const serie = (vals) => {
+    const daily = vals.map((v) => ({ date: dia(v), value: v.value }));
+    return { total: Math.round(daily.reduce((s, x) => s + x.value, 0) * 100) / 100, daily: daily };
+  };
+
+  const errors = {};
+  const total = serie(insights());
+  const vals = insights([['breakdown', 'monetization_tool']]);
+  const porTool = {};
+  META_HERRAMIENTAS.forEach((h) => { porTool[h] = serie(vals.filter((v) => v.monetization_tool === h)); });
+  const nuevas = vals.map((v) => v.monetization_tool).filter((t, i, a) => META_HERRAMIENTAS.indexOf(t) < 0 && a.indexOf(t) === i);
+  if (nuevas.length) errors.herramientas_nuevas = nuevas.sort();
+
+  guardar('Meta', 'DataMeta.json', JSON.stringify({
+    page_id: pagina, start: f.inicio, end: f.ayer, currency: 'USD',
+    fetched_at: new Date().toISOString(),
+    metrics: { total_earnings: total, earnings_by_tool: porTool },
+    errors: errors,
+  }, null, 2));
+}
+
 // --- Taboola (DESACTIVADA: ya no está con nosotros por ahora) -------------------------------------
 // No corre en ejecutarTodo(). Se conserva para probar_taboola() y para reactivarla: moverla de
 // FUENTES_INACTIVAS a FUENTES.
@@ -199,6 +239,7 @@ const FUENTES = {
   adkaora: fuenteAdkaora,
   refinery89: fuenteRefinery89,
   mgid: fuenteMgid,
+  meta: fuenteMeta,
   // taboola: fuenteTaboola,  // desactivada
   teads: fuenteTeads,
   membrana: fuenteMembrana,

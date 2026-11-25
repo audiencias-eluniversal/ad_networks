@@ -14,6 +14,7 @@ y formatos que generaba Make (Power BI no necesita cambios).
 | `adkaora` | `AdKaora\<nombre del adjunto>` (el del último correo de fernando.davila@adkaora.com) |
 | `refinery89` | `Refinery89\Refinery89_Data.csv` |
 | `mgid` | `MGID\DataMgid.json` |
+| `meta` | `Meta\DataMeta.json` (ganancias de monetización de la página de Facebook: total y por herramienta) |
 | ~~`taboola`~~ | ~~`Taboola\DataTaboola.json`~~ (desactivada, código comentado) |
 
 Rango de fechas: de hoy − `DIAS_ATRAS` (40) hasta ayer.

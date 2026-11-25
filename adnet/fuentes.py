@@ -223,6 +223,54 @@ def mgid(f: Fechas) -> None:
     guardar("MGID", "DataMgid.json", r.content)
 
 
+# --- Ruta 9: Meta (ganancias de monetización de la página de Facebook) ----------------------------
+META_HERRAMIENTAS = ["content_monetization", "instream_ads", "stars", "subscriptions"]
+
+
+def meta(f: Fechas) -> None:
+    import json
+    from datetime import timedelta, timezone
+
+    s = http()
+    token = env("META_PAGE_TOKEN")
+    pagina = env("META_PAGE_ID", "127926969701")
+    # "until" de Meta es exclusivo: se pide hasta ayer + 1. Cada valor trae su día (hora del Pacífico).
+    hasta = (date.fromisoformat(f.ayer) + timedelta(days=1)).isoformat()
+
+    def insights(**extra) -> list[dict]:
+        r = pedir(s, "GET", f"https://graph.facebook.com/v23.0/{pagina}/insights",
+                  headers={"Authorization": f"Bearer {token}"},
+                  params={"metric": "monetization_approximate_earnings", "period": "day",
+                          "since": f.inicio, "until": hasta, **extra})
+        return r.json()["data"][0]["values"]
+
+    def dia(v: dict) -> str:
+        if "start_time" in v:
+            return v["start_time"][:10]
+        return (date.fromisoformat(v["end_time"][:10]) - timedelta(days=1)).isoformat()
+
+    def serie(vals: list[dict]) -> dict:
+        daily = [{"date": dia(v), "value": v["value"]} for v in vals]
+        return {"total": round(sum(x["value"] for x in daily), 2), "daily": daily}
+
+    errors: dict = {}
+    total = serie(insights())
+    vals = insights(breakdown="monetization_tool")
+    por_tool = {h: serie([v for v in vals if v["monetization_tool"] == h]) for h in META_HERRAMIENTAS}
+    nuevas = {v["monetization_tool"] for v in vals} - set(META_HERRAMIENTAS)
+    if nuevas:
+        errors["herramientas_nuevas"] = sorted(nuevas)
+
+    ahora = datetime.now(timezone.utc)
+    salida = {
+        "page_id": pagina, "start": f.inicio, "end": f.ayer, "currency": "USD",
+        "fetched_at": ahora.strftime("%Y-%m-%dT%H:%M:%S.") + f"{ahora.microsecond // 1000:03d}Z",
+        "metrics": {"total_earnings": total, "earnings_by_tool": por_tool},
+        "errors": errors,
+    }
+    guardar("Meta", "DataMeta.json", json.dumps(salida, indent=2))
+
+
 FUENTES = {
     "trm": trm,
     "seedtag": seedtag,
@@ -233,4 +281,5 @@ FUENTES = {
     "refinery89": refinery89,
     # "taboola": taboola,  # desactivada
     "mgid": mgid,
+    "meta": meta,
 }

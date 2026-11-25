@@ -61,5 +61,6 @@ function probar_teads() { ejecutar_(['teads'], true); }
 function probar_adx() { ejecutar_(['adx'], true); }
 function probar_adkaora() { ejecutar_(['adkaora'], true); }
 function probar_refinery89() { ejecutar_(['refinery89'], true); }
+function probar_meta() { ejecutar_(['meta'], true); }
 function probar_mgid() { ejecutar_(['mgid'], true); }
 function probar_taboola() { ejecutar_(['taboola'], true); } // Taboola desactivada: solo prueba manual
